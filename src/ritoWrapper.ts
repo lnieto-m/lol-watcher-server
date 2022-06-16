@@ -1,6 +1,6 @@
 import { LolApi } from "twisted";
 import { Regions } from "twisted/dist/constants";
-import { ApiResponseDTO, ChampionsDataDragonDetailsSolo, CurrentGameInfoDTO, SpectatorNotAvailableDTO } from "twisted/dist/models-dto";
+import { ApiResponseDTO, ChampionsDataDragon, CurrentGameInfoDTO, SpectatorNotAvailableDTO } from "twisted/dist/models-dto";
 
 interface GameData {
     gameMode: string;
@@ -20,16 +20,17 @@ interface FilteredBannedChampionData extends FilteredChampionData {
 export default class RitoWrapper {
 
     private lolApi: LolApi;
+    private championList: ChampionsDataDragon;
+    private gameVersion: string;
 
     private async _filterChampData(champID: number): Promise<FilteredChampionData>{
         if (champID === 888) return;
         try {
-            const versions = await this.lolApi.DataDragon.getVersions();
             const data = await this.lolApi.DataDragon.getChampion(champID);
             return {
                 name: data.name,
                 title: data.title,
-                sprite: `https://ddragon.leagueoflegends.com/cdn/${versions[0]}/img/champion/${data.image.full}`
+                sprite: `https://ddragon.leagueoflegends.com/cdn/${this.gameVersion}/img/champion/${data.image.full}`
             }
         } catch (e) {
             console.error(e);
@@ -51,23 +52,34 @@ export default class RitoWrapper {
         }
     }
 
+    /**
+     * Returns a set of data of the given summoner active game
+     * @param summoner Summoner name
+     * @param region Summoner region
+    */
     async GetCurrentGameStats(summoner: string, region: Regions) {
 
         try {
             const { response: { id } } = await this.lolApi.Summoner.getByName(summoner, region);
+            this.championList = await this.lolApi.DataDragon.getChampion();
+            this.gameVersion = await this.lolApi.DataDragon.getVersions()[0];
+            console.log(this.championList.data);
 
             const gameResponse = await this.lolApi.Spectator.activeGame(id, region);
             if ((gameResponse as SpectatorNotAvailableDTO).message) { return { error: "No active game" } }
             const currentGame = (gameResponse as ApiResponseDTO<CurrentGameInfoDTO>).response;
-            const maps = await this.lolApi.DataDragon.getMaps();
+            const map = (await this.lolApi.DataDragon.getMaps()).find((item) => item.mapId == currentGame.mapId.toString());
     
             const bansPromises: Array<Promise<FilteredBannedChampionData>> = [];
             for (let champion of currentGame.bannedChampions) { bansPromises.push(this._filterBannedChampData(champion.championId, champion.teamId)); }
             return {
-                map: maps.find((item) => item.mapId === currentGame.mapId.toString()),
+                map: map,
                 mode: currentGame.gameMode,
                 startTime: currentGame.gameStartTime,
                 picks: currentGame.participants,
+                participant: {
+                    summoner
+                },
                 bans: await Promise.all(bansPromises)
             }
         } catch (e) {
@@ -92,11 +104,13 @@ export default class RitoWrapper {
 }
 
 /*{
-    bans (si draft/ranked)
-    game start time
-    mode
-    map
+    bans (si draft/ranked) DONE
+    game start time DONE
+    mode DONE ?
+    map  DONE
     par champ: {
+        Summoner name
+        Champ Name
         portrait
         runes (principale/secondaire)
         summoner spells
