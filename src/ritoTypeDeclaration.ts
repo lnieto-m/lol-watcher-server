@@ -1,4 +1,4 @@
-import { SummonerLeagueDto } from "twisted/dist/models-dto";
+import { MapsDataDragonDTO, SummonerLeagueDto } from "twisted/dist/models-dto";
 
 export interface GameData {
     gameMode: string;
@@ -56,6 +56,19 @@ export interface QueueData {
     map: string;
     description: string;
     notes: string;
+}
+
+export interface ErrorResponse {
+    code: number;
+    description: string;
+}
+
+export interface GameDataSetResponse {
+    map: MapsDataDragonDTO;
+    mode: string;
+    startTime: number;
+    participants: FilteredParticipantData[];
+    bans: FilteredBannedChampionData[];
 }
 
 export const RUNES_BASE_URL = "https://ddragon.canisback.com/img/";
