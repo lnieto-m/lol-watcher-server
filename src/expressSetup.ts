@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { request, Request, Response } from 'express';
 import cors, { CorsOptions } from 'cors';
 import RitoWrapper from './ritoWrapper';
 import { Constants } from 'twisted';
@@ -30,11 +30,17 @@ export default function ExpressSetup() {
     });
     
     app.get('/ongoing', async (req: Request, res: Response) => {
-        if (!req.query.username) {
-            res.send({error: "error"});
-            return
+        if (!req.query.username || !req.query.region) {
+            res.send({ error: "Missing parameter" });
+            return;
         }
-        const data = await rito.GetCurrentGameStats(req.query.username as string, Constants.Regions.EU_WEST);
+        if (!Object.keys(Constants.Regions).includes(req.query.region as string)) {
+            res.send({
+                error: "Region parameter not compatible"
+            });
+            return;
+        }
+        const data = await rito.GetCurrentGameStats(req.query.username as string, Constants.Regions[request.query.region as string]);
         res.send(data);
     });
     
