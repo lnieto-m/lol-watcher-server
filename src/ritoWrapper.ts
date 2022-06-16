@@ -2,37 +2,7 @@ import axios from "axios";
 import { LolApi } from "twisted";
 import { Regions } from "twisted/dist/constants";
 import { ApiResponseDTO, ChampionsDataDragonDetails, CurrentGameInfoDTO, CurrentGameParticipantDTO, SpectatorNotAvailableDTO, SummonerLeagueDto } from "twisted/dist/models-dto";
-
-interface GameData {
-    gameMode: string;
-    map: string;
-}
-
-interface FilteredChampionData {
-    name: string;
-    title: string;
-    sprite: string;
-}
-
-interface FilteredBannedChampionData extends FilteredChampionData {
-    side: number;
-}
-
-interface FilteredParticipantData {
-    summonerName: string;
-    championName: string;
-    championPortraitURL: string;
-    summonerSpells: {
-        spell1URL: string;
-        spell2URL: string;
-    },
-    perks: {
-        main: string;
-        secondary: string;
-    },
-    rank: SummonerLeagueDto[], //string,
-    side: number
-}
+import { FilteredChampionData, FilteredBannedChampionData, FilteredParticipantData, GlobalRunesData, RUNES_BASE_URL, QueueData, GameDataSetResponse, ErrorResponse } from "./ritoTypeDeclaration";
 
 export default class RitoWrapper {
 
@@ -40,6 +10,8 @@ export default class RitoWrapper {
     private championList: ChampionsDataDragonDetails[];
     private gameVersion: string;
     private summonerSpells: { [key: string]: any };
+    private runesData: GlobalRunesData[];
+    private queuesData: QueueData[];
 
     private _filterChampData(champID: number): FilteredChampionData {
         if (champID === 888) return;
@@ -76,7 +48,8 @@ export default class RitoWrapper {
             const championData = this.championList.find((item) => item.key == rawData.championId.toString());
             const summonerSpellsList = Object.values(this.summonerSpells.data as { [key: string]: any });
             const rank = (await this.lolApi.League.bySummoner(rawData.summonerId, region)).response;
-            
+            const mainRuneStyle = this.runesData.find(item => item.id === rawData.perks.perkStyle).slots[0].runes.find(item => item.id === rawData.perks.perkIds[0]).icon;
+
             return {
                 summonerName: rawData.summonerName,
                 championName: championData.name,
@@ -86,8 +59,8 @@ export default class RitoWrapper {
                     spell2URL: `http://ddragon.leagueoflegends.com/cdn/${this.gameVersion}/img/spell/${summonerSpellsList.find(item => (item.key as string) == rawData.spell2Id.toString()).id as string}.png`
                 },
                 perks: {
-                    main: "",
-                    secondary: ""
+                    main: RUNES_BASE_URL + mainRuneStyle,
+                    secondary: RUNES_BASE_URL + this.runesData.find(item => item.id == rawData.perks.perkSubStyle).icon
                 },
                 rank: rank,
                 side: rawData.teamId
@@ -103,7 +76,7 @@ export default class RitoWrapper {
      * @param summoner Summoner name
      * @param region Summoner region
     */
-    async GetCurrentGameStats(summoner: string, region: Regions) {
+    async GetCurrentGameStats(summoner: string, region: Regions): Promise<GameDataSetResponse | ErrorResponse> {
 
         try {
             const { response: { id } } = await this.lolApi.Summoner.getByName(summoner, region);
@@ -116,10 +89,13 @@ export default class RitoWrapper {
                 this.gameVersion = "12.11.1";
             }
             this.summonerSpells = await (await axios.get(`https://ddragon.leagueoflegends.com/cdn/${this.gameVersion}/data/en_US/summoner.json`)).data;
+            this.runesData = await (await axios.get(`https://ddragon.leagueoflegends.com/cdn/${this.gameVersion}/data/en_US/runesReforged.json`)).data;
+            this.queuesData = await (await axios.get('https://static.developer.riotgames.com/docs/lol/queues.json')).data;
 
             const gameResponse = await this.lolApi.Spectator.activeGame(id, region);
 
-            if ((gameResponse as SpectatorNotAvailableDTO).message) { return { error: "No active game" } }
+            // Unavailable game
+            if ((gameResponse as SpectatorNotAvailableDTO).message) { return { code: 1, description: (gameResponse as SpectatorNotAvailableDTO).message }; }
 
             const currentGame = (gameResponse as ApiResponseDTO<CurrentGameInfoDTO>).response;
             const map = (await this.lolApi.DataDragon.getMaps()).find((item) => item.mapId == currentGame.mapId.toString());
@@ -135,19 +111,15 @@ export default class RitoWrapper {
 
             return {
                 map: map,
-                mode: currentGame.gameType,
+                mode: this.queuesData.find(item => item.queueId == currentGame.gameQueueConfigId).description,
                 startTime: currentGame.gameStartTime,
                 participants: await Promise.all(participantsPromises),
                 bans: bans
             }
         } catch (e) {
             console.error(e);
-            return {}
+            return { code: 403, description: "No game active" }
         }
-        // const picksPromises: Array<Promise<FilteredChampionData>> = [];
-        // for (let champion of currentGame.)
-
-
     }
 
     constructor(private apiKey: string) {
